@@ -8,6 +8,10 @@ function J = numericalJacobian(f, x)
     for i = 1:n
         dx = zeros(n,1);
         dx(i) = epsilon;
-        J(:,i) = (f(x + dx) - f(x - dx)) / (2 * epsilon);
+        x1 = x + dx;
+        x2 = x - dx;
+        x1(1:4) = x1(1:4) / norm(x1(1:4));
+        x2(1:4) = x2(1:4) / norm(x2(1:4));
+        J(:,i) = (f(x1) - f(x2)) / (2 * epsilon);
     end
 end

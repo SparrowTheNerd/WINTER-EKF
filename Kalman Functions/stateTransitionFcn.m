@@ -25,6 +25,8 @@ qz1 = qz1/qNorm;
 % Rotate accelerations into the global frame
 ag = quatrotate([qw1 qx1 qy1 qz1],[ax ay az]);
 
+ag(3) = ag(3)-9.80665;
+
 % Integrate acceleration for position and velocity
 vx1 = vx + ag(1)*dT; 
 vy1 = vy + ag(2)*dT;
