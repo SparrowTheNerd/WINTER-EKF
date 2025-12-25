@@ -4,8 +4,6 @@ SetupEnv();
 dat = readtable("rocket_sd_data_fixed.csv");
 
 % States are wxyz quaternion, xyz position, xyz velocity
-% Control inputs are xyz accelerometer, xyz gyroscope
-% Measurements are xyz GPS, x barometer
 
 tS = 0.01; %sample time (100hz)
 G = 9.80665;
@@ -39,6 +37,8 @@ Xnn = [q0(1),q0(2),q0(3),q0(4),0,0,0,0,0,0];
 
 statesX = zeros(10,height(dat));
 
+accelVecs = zeros(3,height(dat));
+
 statesX(:,1) = Xnn;
 for i = 1:height(dat)-1
     % Prediction Step
@@ -49,6 +49,9 @@ for i = 1:height(dat)-1
     dF = numericalJacobian(J,Xnn); %jacobian dFdX
     statesX(:,i+1) = Xn1n;
     Xnn = Xn1n;
+
+    accelVecs(:,i+1) = quatrotate(Xnn(1:4)',[dat.aX(i),dat.aY(i),dat.aZ(i)]);
+    accelVecs(3,i+1) = accelVecs(3,i+1) - 1;
 end
 
 posList = statesX(5:7,:);
@@ -72,32 +75,34 @@ xlabel("Time (s)");
 ylabel("Altitude (m)");
 title("Altitude vs Time");
 
-quatStates = statesX(1:4,:);
 eulAngs = zeros(height(dat),3);
 for i = 1:height(dat)
-    eulAngs(i,:) = quat2eul(quatStates(:,i)',"ZYX")*180/pi;
+    eulAngs(i,:) = quat2eul(quatList(:,i)',"ZYX")*180/pi;
 end
 
 figure(2);
 axP = subplot(3,1,1);
 plot(dat.Time,eulAngs(:,1));
 xlabel("Time (s)");
-ylabel("Pitch (deg)");
-title("Pitch Angle vs Time");
+ylabel("Z-Axis (deg)");
+title("Z-Axis Angle vs Time");
+grid on;
 axY = subplot(3,1,2);
 plot(dat.Time,eulAngs(:,2));
 xlabel("Time (s)");
-ylabel("Yaw (deg)");
-title("Yaw Angle vs Time");
+ylabel("Y-Axis (deg)");
+title("Y-Axis Angle vs Time");
+grid on;
 axR = subplot(3,1,3);
 plot(dat.Time,eulAngs(:,3));
-hold on;
-plot(dat.Time,dat.mY*100);
+% hold on;
+% plot(dat.Time,dat.mY*100);
 xlabel("Time (s)");
-ylabel("Roll (deg)");
-title("Roll Angle vs Time");
+ylabel("X-Axis (deg)");
+title("X-Axis vs Time");
 linkaxes([axP axY axR],'y')
 axP.YLim = [-180 180];
+grid on;
 
 % figure(3);
 % plot(dat.Time,statesX(8,:));
@@ -107,12 +112,20 @@ for i = 1:length(quatList)
     normQ(i) = norm(quatList(:,i));
 end
 
+%%
+stepsize = 20;
+endpos = 6000;
+quiver3(posList(1,1:stepsize:endpos), posList(2,1:stepsize:endpos), posList(3,1:stepsize:endpos), accelVecs(1,1:stepsize:endpos),accelVecs(2,1:stepsize:endpos),accelVecs(3,1:stepsize:endpos),2); axis equal;
+
 %% 6DoF Animation
 % v = VideoWriter('ekf_animation_justlaunch.mp4','MPEG-4');
 % v.FrameRate = 30;
 % open(v);
 for i = 1:2:height(dat)
-    q = quaternion(quatList(:,i)');
+    q = quatList(:,i);
+    q = [q(1) -q(2) -q(3) -q(4)];
+    q = quaternion(q);
+    
     pos = posList(:,i);
     poseplot(q,pos,'ScaleFactor',0.2);
 
@@ -144,7 +157,9 @@ function run_animation(quatList, posList, dat)
     zlabel("Z")
     
     for i = 1:5:height(dat)
-        q = quaternion(quatList(:,i)');
+        q = quatList(:,i);
+        q = [q(1) q(2) -q(3) q(4)];
+        q = quaternion(q);
         pos = posList(:,i);
         set(patch, Orientation=q, Position=pos); hold on
         plot3(pos(1), pos(2), pos(3), '.b', 'MarkerSize', 2); hold on

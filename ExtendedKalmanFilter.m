@@ -59,7 +59,7 @@ GG = @(A,B) [ dot(A,B) -norm(cross(A,B)) 0;     %%GG, FFi, UU create rotm
 FFi = @(A,B) [ A (B-dot(A,B)*A)/norm(B-dot(A,B)*A) cross(B,A) ];
 UU = @(Fi,G) Fi*G/(Fi);
 
-Rfb = (quat2rotm([0.9992 0 0.0411 0.0016]));
+Rfb = (quat2rotm([1 0 0 0]));
 v = Rfb*gf';
 Rft = UU(FFi(v,[0; 0; 1]),GG(v,[0; 0; 1]));
 vec0 = Rft*[1;0;0];
@@ -91,6 +91,8 @@ statesX = zeros(10,height(dat));
 covariance = zeros(10,10,height(dat));
 
 statesX(:,1) = Xnn;
+accelVecs = zeros(3,height(dat));
+
 for i = 1:height(dat)-1
     % Prediction Step
     dT = (dat.Time(i+1)-dat.Time(i)); %timestep
@@ -99,7 +101,7 @@ for i = 1:height(dat)-1
     J = @(x) stateTransitionFcn(x,u,dT); %function definition for taking jacobian numerically
     dF = numericalJacobian(J,Xnn); %jacobian dFdX
 
-    % Pn1n = dF*Pnn*dF' + Q;
+    Pn1n = dF*Pnn*dF' + Q;
 
     %Correction Step
     %barometer correction
@@ -115,27 +117,30 @@ for i = 1:height(dat)-1
     %     q = q/norm(q);
     %     XnnB(1:4) = q;
     % else
-        % PnnB = Pn1n;
+        PnnB = Pn1n;
         XnnB = Xn1n;
     % end
-    % %magnetometer correction
-    % zn = [dat.mZ(i) dat.mY(i) dat.mX(i)];
-    % zn = zn/norm(zn);
-    % J = @(x) magMeasurementFcn(x,mag0);
-    % h = J(XnnB);
-    % dh = numericalJacobian(J,XnnB);
-    % 
-    % Kn = PnnB * dh' / (dh*PnnB*dh'+R_mag);
-    % Pnn = (eye(10)-Kn*dh)*PnnB*((eye(10)-Kn*dh)')+Kn*R_mag*Kn';
-    % Xnn = XnnB + Kn*((zn-h)');
-    % q = Xnn(1:4);
-    % q = q/norm(q);
-    % Xnn(1:4) = q;
-    % 
-    statesX(:,i+1) = XnnB;
-    % covariance(:,:,i+1) = PnnB;
-    Xnn = XnnB;
+    %magnetometer correction
+    zn = [dat.mZ(i) dat.mY(i) dat.mX(i)];
+    zn = zn/norm(zn);
+    J = @(x) magMeasurementFcn(x,mag0);
+    h = J(XnnB);
+    dh = numericalJacobian(J,XnnB);
+
+    Kn = PnnB * dh' / (dh*PnnB*dh'+R_mag);
+    Pnn = (eye(10)-Kn*dh)*PnnB*((eye(10)-Kn*dh)')+Kn*R_mag*Kn';
+    Xnn = XnnB + Kn*((zn-h)');
+    q = Xnn(1:4);
+    q = q/norm(q);
+    Xnn(1:4) = q;
+
+    statesX(:,i+1) = Xnn;
+    covariance(:,:,i+1) = Pnn;
+    % Xnn = XnnB;
     % Pnn = PnnB;
+
+    accelVecs(:,i+1) = quatrotate(Xnn(1:4)',[dat.aX(i),dat.aY(i),dat.aZ(i)]);
+    % accelVecs(3,i+1) = accelVecs(3,i+1) - 1;
 end
 
 posList = statesX(5:7,:);
@@ -218,6 +223,11 @@ for i = 1:2:height(dat)
     % writeVideo(v, frame);
 end
 % close(v);
+
+%%
+stepsize = 20;
+endpos = 2500;
+quiver3(posList(1,1:stepsize:endpos), posList(2,1:stepsize:endpos), posList(3,1:stepsize:endpos), accelVecs(1,1:stepsize:endpos),accelVecs(2,1:stepsize:endpos),accelVecs(3,1:stepsize:endpos),2); axis equal;
 
 %%
 function q = quatvec2(v1,v2)
