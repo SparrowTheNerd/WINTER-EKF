@@ -1,11 +1,12 @@
 clear; clc; close;
 
 SetupEnv();
-dat = readtable("rocket_sd_data_fixed.csv");
+% dat = readtable("rocket_sd_data_fixed.csv");
 
 % States are wxyz quaternion, xyz position, xyz velocity
 
 tS = 0.01; %sample time (100hz)
+[ORDat,dat] = ORDataImport(tS);
 G = 9.80665;
 
 alt0 = atmospalt(dat.Prs(1)); %initial pressure altitude
@@ -16,20 +17,20 @@ alt0 = atmospalt(dat.Prs(1)); %initial pressure altitude
 %quaternion output from the EKF to determine approximately the true launch
 %angle of the rocket.
 
-gf = [dat.aX(1) dat.aY(1) dat.aZ(1)]; %gravity vector
+% gf = [dat.aX(1) dat.aY(1) dat.aZ(1)]; %gravity vector
+% 
+% GG = @(A,B) [ dot(A,B) -norm(cross(A,B)) 0;     %%GG, FFi, UU create rotm
+%               norm(cross(A,B)) dot(A,B)  0;
+%               0              0           1];
+% FFi = @(A,B) [ A (B-dot(A,B)*A)/norm(B-dot(A,B)*A) cross(B,A) ];
+% UU = @(Fi,G) Fi*G/(Fi);
+% 
+% Rfb = (quat2rotm([1 0 0 0]));
+% v = Rfb*gf';
+% Rft = UU(FFi(v,[0; 0; 1]),GG(v,[0; 0; 1]));
+% vec0 = Rft*[1;0;0];
 
-GG = @(A,B) [ dot(A,B) -norm(cross(A,B)) 0;     %%GG, FFi, UU create rotm
-              norm(cross(A,B)) dot(A,B)  0;
-              0              0           1];
-FFi = @(A,B) [ A (B-dot(A,B)*A)/norm(B-dot(A,B)*A) cross(B,A) ];
-UU = @(Fi,G) Fi*G/(Fi);
-
-Rfb = (quat2rotm([1 0 0 0]));
-v = Rfb*gf';
-Rft = UU(FFi(v,[0; 0; 1]),GG(v,[0; 0; 1]));
-vec0 = Rft*[1;0;0];
-
-q0 = quatvec2([1;0;0],vec0);
+q0 = [ ORDat.qW(1) ORDat.qX(1) ORDat.qY(1) ORDat.qZ(1) ];
 
 % =======================
 
@@ -43,15 +44,15 @@ statesX(:,1) = Xnn;
 for i = 1:height(dat)-1
     % Prediction Step
     dT = (dat.Time(i+1)-dat.Time(i)); %timestep
-    u = [dat.aX(i)*G dat.aY(i)*G dat.aZ(i)*G dat.gX(i)*pi/180 dat.gY(i)*pi/180 dat.gZ(i)*pi/180]; %control vector
+    u = [dat.aX(i) dat.aY(i) dat.aZ(i) dat.gX(i) dat.gY(i) dat.gZ(i)]; %control vector
     Xn1n = stateTransitionFcn(Xnn,u,dT); %Xn+1,n
     J = @(x) stateTransitionFcn(x,u,dT); %function definition for taking jacobian numerically
     dF = numericalJacobian(J,Xnn); %jacobian dFdX
     statesX(:,i+1) = Xn1n;
     Xnn = Xn1n;
 
-    accelVecs(:,i+1) = quatrotate(Xnn(1:4)',[dat.aX(i),dat.aY(i),dat.aZ(i)]);
-    accelVecs(3,i+1) = accelVecs(3,i+1) - 1;
+    accelVecs(:,i+1) = quatrotate([Xnn(1) -Xnn(2:4)'],[dat.aX(i),dat.aY(i),dat.aZ(i)]);
+    % accelVecs(3,i+1) = accelVecs(3,i+1) - 1; % accounts for gravity - unnecessary with OR data
 end
 
 posList = statesX(5:7,:);
@@ -64,20 +65,34 @@ plot(dat.Time,statesX(5,:));
 xlabel("Time (s)");
 ylabel("Crossrange X (m)");
 title("Crossrange X vs Time");
+hold on;
+plot(ORDat.t,ORDat.relPosX);
+legend("Simulated","Truth")
+grid on;
 subplot(3,1,2);
 plot(dat.Time,statesX(6,:))
 xlabel("Time (s)");
 ylabel("Crossrange Y (m)");
 title("Crossrange Y vs Time");
+hold on;
+plot(ORDat.t,ORDat.relPosY);
+legend("Simulated","Truth")
+grid on;
 subplot(3,1,3);
 plot(dat.Time,statesX(7,:))
 xlabel("Time (s)");
 ylabel("Altitude (m)");
 title("Altitude vs Time");
+hold on;
+plot(ORDat.t,ORDat.relPosZ);
+legend("Simulated","Truth")
+grid on;
 
 eulAngs = zeros(height(dat),3);
+eulAngsTrue = zeros(height(dat),3);
 for i = 1:height(dat)
     eulAngs(i,:) = quat2eul(quatList(:,i)',"ZYX")*180/pi;
+    eulAngsTrue(i,:) = quat2eul([ORDat.qW(i) ORDat.qX(i) ORDat.qY(i) ORDat.qZ(i)],"ZYX")*180/pi;
 end
 
 figure(2);
@@ -86,12 +101,18 @@ plot(dat.Time,eulAngs(:,1));
 xlabel("Time (s)");
 ylabel("Z-Axis (deg)");
 title("Z-Axis Angle vs Time");
+hold on;
+plot(ORDat.t,eulAngsTrue(:,1));
+legend("Simulated","Truth")
 grid on;
 axY = subplot(3,1,2);
 plot(dat.Time,eulAngs(:,2));
 xlabel("Time (s)");
 ylabel("Y-Axis (deg)");
 title("Y-Axis Angle vs Time");
+hold on;
+plot(ORDat.t,eulAngsTrue(:,2));
+legend("Simulated","Truth")
 grid on;
 axR = subplot(3,1,3);
 plot(dat.Time,eulAngs(:,3));
@@ -100,12 +121,46 @@ plot(dat.Time,eulAngs(:,3));
 xlabel("Time (s)");
 ylabel("X-Axis (deg)");
 title("X-Axis vs Time");
-linkaxes([axP axY axR],'y')
-axP.YLim = [-180 180];
+hold on;
+plot(ORDat.t,eulAngsTrue(:,3));
+legend("Simulated","Truth")
+% linkaxes([axP axY axR],'y')
+% axP.YLim = [-180 180];
 grid on;
 
-% figure(3);
-% plot(dat.Time,statesX(8,:));
+figure(3)
+subplot(4,1,1);
+plot(dat.Time,statesX(1,:));
+xlabel("Time (s)");
+title("Quat W vs Time");
+hold on;
+plot(ORDat.t,ORDat.qW);
+legend("Simulated","Truth")
+grid on;
+subplot(4,1,2);
+plot(dat.Time,statesX(2,:));
+xlabel("Time (s)");
+title("Quat X vs Time");
+hold on;
+plot(ORDat.t,ORDat.qX);
+legend("Simulated","Truth")
+grid on;
+subplot(4,1,3);
+plot(dat.Time,statesX(3,:));
+xlabel("Time (s)");
+title("Quat Y vs Time");
+hold on;
+plot(ORDat.t,ORDat.qY);
+legend("Simulated","Truth")
+grid on;
+subplot(4,1,4);
+plot(dat.Time,statesX(4,:));
+xlabel("Time (s)");
+title("Quat Z vs Time");
+hold on;
+plot(ORDat.t,ORDat.qZ);
+legend("Simulated","Truth")
+grid on;
 
 normQ = zeros(1,length(quatList));
 for i = 1:length(quatList)
@@ -114,8 +169,14 @@ end
 
 %%
 stepsize = 20;
-endpos = 6000;
+endpos = 880;
+figure(4);
 quiver3(posList(1,1:stepsize:endpos), posList(2,1:stepsize:endpos), posList(3,1:stepsize:endpos), accelVecs(1,1:stepsize:endpos),accelVecs(2,1:stepsize:endpos),accelVecs(3,1:stepsize:endpos),2); axis equal;
+hold on;
+quiver3(ORDat.relPosX(1:stepsize:endpos), ORDat.relPosY(1:stepsize:endpos), ORDat.relPosZ(1:stepsize:endpos), ORDat.worldAccX(1:stepsize:endpos),ORDat.worldAccY(1:stepsize:endpos),ORDat.worldAccZ(1:stepsize:endpos),2); axis equal;
+% quiver3(posList(1,1:stepsize:endpos)', posList(2,1:stepsize:endpos)', posList(3,1:stepsize:endpos)',ORDat.worldAccX(1:stepsize:endpos),ORDat.worldAccY(1:stepsize:endpos),ORDat.worldAccZ(1:stepsize:endpos),2); axis equal;
+legend("Simulated","Truth");
+title("Acceleration Vectors");
 
 %% 6DoF Animation
 % v = VideoWriter('ekf_animation_justlaunch.mp4','MPEG-4');
@@ -151,7 +212,7 @@ function run_animation(quatList, posList, dat)
     q = quaternion(quatList(:,1)');
     patch = poseplot(q);
     
-    patch.ScaleFactor = 60;
+    patch.ScaleFactor = 15;
     xlabel("X")
     ylabel("Y")
     zlabel("Z")
@@ -164,9 +225,9 @@ function run_animation(quatList, posList, dat)
         set(patch, Orientation=q, Position=pos); hold on
         plot3(pos(1), pos(2), pos(3), '.b', 'MarkerSize', 2); hold on
     
-        xlim([-1000, 1000]);
-        ylim([-1000, 1000]);
-        zlim([0, 1000]);
+        xlim([-100, 100]);
+        ylim([-100, 100]);
+        zlim([0, 400]);
     
         set(gca,'ZDir','normal')  
         title(sprintf("t = %0.2f", dat.Time(i)))

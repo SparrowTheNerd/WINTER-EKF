@@ -25,8 +25,8 @@ posList = [ORDat.relPosX ORDat.relPosY ORDat.relPosZ];
 
     q = quaternion(quatList(1,:));
     patch = poseplot(q);
-    
     patch.ScaleFactor = 15;
+
     xlabel("X")
     ylabel("Y")
     zlabel("Z")
