@@ -24,10 +24,10 @@ qz1 = qz1/qNorm;
 
 % Rotate accelerations into the global frame
 % for some reason, the aerospace toolbox quatrotate expects a world-to-body
-% frame rotation, so we must do the conjugate
+% quaternion, so we must do the conjugate
 ag = quatrotate([qw1 -qx1 -qy1 -qz1],[ax ay az]);
 
-% ag(3) = ag(3)-9.80665;
+ag(3) = ag(3)+9.80665;
 
 % Integrate acceleration for position and velocity
 vx1 = vx + ag(1)*dT; 
