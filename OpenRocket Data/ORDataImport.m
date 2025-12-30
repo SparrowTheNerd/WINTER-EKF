@@ -4,7 +4,7 @@
 function [ORDat,inertialDat] = ORDataImport(dT)
 % dT = 0.01;
 
-ORraw = readtable("OpenRocket Data/simulation-003.csv");
+ORraw = readtable("OpenRocket Data/simulation-004.csv");
 
 TT = table2timetable(ORraw, 'RowTimes', seconds(ORraw.t));
 % retime resamples time data and resolves irregular timing, like from OR
@@ -12,7 +12,6 @@ TT_100Hz = retime(TT, seconds(0:dT:max(ORraw.t)), 'linear');
 
 ORDat = timetable2table(TT_100Hz, 'ConvertRowTimes', true);
 ORDat = removevars(ORDat,"Time");
-clear TT TT_100Hz ORraw
 
 [~,~,P,~,~,~] = atmosisa(ORDat.relPosZ);
 
@@ -31,8 +30,6 @@ accel = quatrotate(quatconj([ORDat.qW ORDat.qX ORDat.qY ORDat.qZ]),[inertialDat.
 accel(:,3) = accel(:,3) - 9.80665;
 accelBody = quatrotate(([ORDat.qW ORDat.qX ORDat.qY ORDat.qZ]),accel);
 inertialDat.aX = accelBody(:,1); inertialDat.aY = accelBody(:,2); inertialDat.aZ = accelBody(:,3);
-
-clear accel accelBody
 
 % add noise and bias to measurements
 

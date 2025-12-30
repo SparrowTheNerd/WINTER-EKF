@@ -16,14 +16,18 @@ sigAccel = (0.005*9.81); % m/s^2 rms
 sigGyro = deg2rad(0.1); % dps rms
 sigMag = 0.0004; % Gauss rms
 sigBaro = 3; % meters rms
-sigGPS = 0.5; % meters rms
-sigGPSVel = 0.05; % m/s rms
+sigGPS = 10; % meters rms
+
+Rmag = eye(3)*sigMag^2;
+Rbaro = sigBaro^2;
+Rgps = eye(2)*sigGPS^2;
+% sigGPSVel = 0.05; % m/s rms
 
 % pnX is process noise
-pnAccel = 1;
+pnAccel = 10;
 pnGyro = deg2rad(1);
 pnBf = 0.01;
-pnBw = 0.1;
+pnBw = 0.01;
 pnBm = 0.0005;
 
 G = 9.80665;
@@ -36,8 +40,10 @@ wBias = [0; 0; 0]; aBias = [0; 0; 0]; mBias = [0; 0; 0]; % IMU bias vectors
 mag0 = [dat.mX(1) dat.mY(1) dat.mZ(1)]; %initial magnetic vector
 mag0 = quatrotBI(qPos,mag0);
 
+LL0 = [ORDat.lat(1) ORDat.lon(1)];
+
 inertialState = [qPos'; 0; 0; alt0; 0; 0; 0;]; % initial rocket state
-inertialStateList = zeros(10,size(ORDat,1)+1); % +1 b/c initial condition is not calculated during the loop
+inertialStateList = zeros(10,size(ORDat,1));
 inertialStateList(:,1) = inertialState;
 
 errStateList = zeros(18,size(ORDat,1));
@@ -53,7 +59,7 @@ for i = 1:size(ORDat,1)-1
     % a-priori inertial state
     inertialStateN = integrationMEKF(inertialStateList(:,i),[a w],[aBias wBias],tS); 
     
-    if (mod(i,3) == 0)
+    if (mod(i,1) == 0)
         % 2) covariance prediction
         F = stateTransitionMEKF(inertialStateN(1:4),w,a,inertialStateList(1:4,i),wPos,aPos);
         wPos = w; aPos = a;
@@ -63,21 +69,23 @@ for i = 1:size(ORDat,1)-1
     
         % 3 & 4) residual mappings & kalman gain
         [dm, hm] = magMeasurementMEKF(inertialStateN(1:4),[dat.mX(i) dat.mY(i) dat.mZ(i)],mag0);
-        Km = Pn1n*hm' / (hm*Pn1n*hm' + (sigMag^2 * eye(3)));
+        Km = Pn1n*hm' / (hm*Pn1n*hm' + Rmag);
         dXm = Km*dm';
         Pm = (eye(18)-Km*hm)*Pn1n;
-        % Pm = 0.5*(Pm + Pm');  % enforce symmetry
     
         alt = atmospalt(dat.Prs(i));
         [db, hb] = baroMeasurementMEKF(inertialStateN(7),alt-alt0);
-        Kb = Pm*hb' / (hb*Pm*hb' + sigBaro^2);
+        Kb = Pm*hb' / (hb*Pm*hb' + Rbaro);
         dXb = dXm + Kb*db;
-        % disp(db);
         Pb = (eye(18)-Kb*hb)*Pm;
-        % Pb = 0.5*(Pb + Pb');  % enforce symmetry
 
-        Xnn = dXb;
-        Pnn = Pb;
+        [dg, hg] = gpsMeasurementMEKF(inertialStateN(5),inertialStateN(6),dat.lat(i),dat.lon(i),LL0(1),LL0(2));
+        Kg = Pb*hg' / (hg*Pb*hg' + Rgps);
+        dXg = dXb + Kg*dg';
+        Pg = (eye(18)-Kg*hg)*Pb;
+
+        Xnn = dXg;
+        Pnn = Pg;
         % cond2 = cond(Pnn);
     
         % 5) update full states and calibrations
@@ -114,7 +122,7 @@ posList = inertialStateList(5:7,:);
 %% Figure Plotting
 figure(1);
 subplot(3,1,1);
-plot(dat.Time(1:end),inertialStateList(5,2:end));
+plot(dat.Time(1:end),inertialStateList(5,1:end));
 xlabel("Time (s)");
 ylabel("Crossrange X (m)");
 title("Crossrange X vs Time");
@@ -123,7 +131,7 @@ plot(ORDat.t,ORDat.relPosX);
 legend("Simulated","Truth")
 grid on;
 subplot(3,1,2);
-plot(dat.Time(1:end),inertialStateList(6,2:end))
+plot(dat.Time(1:end),inertialStateList(6,1:end))
 xlabel("Time (s)");
 ylabel("Crossrange Y (m)");
 title("Crossrange Y vs Time");
@@ -132,7 +140,7 @@ plot(ORDat.t,ORDat.relPosY);
 legend("Simulated","Truth")
 grid on;
 subplot(3,1,3);
-plot(dat.Time(1:end),inertialStateList(7,2:end))
+plot(dat.Time(1:end),inertialStateList(7,1:end))
 xlabel("Time (s)");
 ylabel("Altitude (m)");
 title("Altitude vs Time");
@@ -183,7 +191,7 @@ grid on;
 
 figure(3)
 qwp = subplot(4,1,1);
-plot(dat.Time,inertialStateList(1,2:end));
+plot(dat.Time,inertialStateList(1,1:end));
 xlabel("Time (s)");
 title("Quat W vs Time");
 hold on;
@@ -191,7 +199,7 @@ plot(ORDat.t,ORDat.qW);
 legend("Simulated","Truth")
 grid on;
 qxp = subplot(4,1,2);
-plot(dat.Time,inertialStateList(2,2:end));
+plot(dat.Time,inertialStateList(2,1:end));
 xlabel("Time (s)");
 title("Quat X vs Time");
 hold on;
@@ -199,7 +207,7 @@ plot(ORDat.t,ORDat.qX);
 legend("Simulated","Truth")
 grid on;
 qyp = subplot(4,1,3);
-plot(dat.Time,inertialStateList(3,2:end));
+plot(dat.Time,inertialStateList(3,1:end));
 xlabel("Time (s)");
 title("Quat Y vs Time");
 hold on;
@@ -207,7 +215,7 @@ plot(ORDat.t,ORDat.qY);
 legend("Simulated","Truth")
 grid on;
 qzp = subplot(4,1,4);
-plot(dat.Time,inertialStateList(4,2:end));
+plot(dat.Time,inertialStateList(4,1:end));
 xlabel("Time (s)");
 title("Quat Z vs Time");
 hold on;
@@ -242,8 +250,8 @@ function run_animation(quatList, posList, dat)
         set(patch, Orientation=q, Position=pos); hold on
         plot3(pos(1), pos(2), pos(3), '.b', 'MarkerSize', 2); hold on
     
-        xlim([-100, 1000]);
-        ylim([-100, 2500]);
+        xlim([-100, 600]);
+        ylim([-100, 600]);
         zlim([0, 4500]);
     
         set(gca,'ZDir','normal')  
