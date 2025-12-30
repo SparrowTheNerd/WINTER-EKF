@@ -10,7 +10,7 @@ tS = 0.01; %sample time (100hz)
 [ORDat,dat] = ORDataImport(tS);
 
 sigAccel = (0.005*9.81)^2; % m/s^2 rms
-sigGyro = 0.5^2; % dps rms
+sigGyro = deg2rad(0.1)^2; % dps rms
 sigMag = 0.0004^2; % Gauss rms
 sigBaro = 3^2; % meters rms
 sigGPS = 0.5^2; % meters rms

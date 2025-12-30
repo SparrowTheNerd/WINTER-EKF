@@ -24,8 +24,8 @@ for i=1:size(ORDat,1)
     mXYZrot = quatrotate([ORDat.qW ORDat.qX ORDat.qY ORDat.qZ],mXYZ)*1e-5;
 end
 
-inertialDatArr = [ORDat.t P ORDat.bodyAccX ORDat.bodyAccY ORDat.bodyAccZ ORDat.bodyGyrX ORDat.bodyGyrY ORDat.bodyGyrZ mXYZrot(:,1) mXYZrot(:,2) mXYZrot(:,3)];
-inertialDat = array2table(inertialDatArr,"VariableNames",{'Time','Prs','aX','aY','aZ','gX','gY','gZ','mX','mY','mZ'});
+inertialDatArr = [ORDat.t P ORDat.bodyAccX ORDat.bodyAccY ORDat.bodyAccZ ORDat.bodyGyrX ORDat.bodyGyrY ORDat.bodyGyrZ mXYZrot(:,1) mXYZrot(:,2) mXYZrot(:,3),ORDat.lat,ORDat.lon];
+inertialDat = array2table(inertialDatArr,"VariableNames",{'Time','Prs','aX','aY','aZ','gX','gY','gZ','mX','mY','mZ','lat','lon'});
 
 accel = quatrotate(quatconj([ORDat.qW ORDat.qX ORDat.qY ORDat.qZ]),[inertialDat.aX inertialDat.aY inertialDat.aZ]);
 accel(:,3) = accel(:,3) - 9.80665;
@@ -37,22 +37,24 @@ clear accel accelBody
 % add noise and bias to measurements
 
 sigAccel = (0.005*9.81); % m/s^2 rms
-sigGyro = 0.5; % dps rms
+sigGyro = deg2rad(0.1); % dps rms
 sigMag = 0.0004; % Gauss rms
 sigBaro = 3; % meters rms
-% sigGPS = 0.5^2; % meters rms
+sigGPS = 0.00005; % coordinate degrees rms
 % sigGPSVel = 0.05^2; % m/s rms
 
 inertialDat.Prs = inertialDat.Prs + sigBaro * randn(size(ORDat,1),1);
 inertialDat.aX = inertialDat.aX   + sigAccel * randn(size(ORDat,1),1);
 inertialDat.aY = inertialDat.aY   + sigAccel * randn(size(ORDat,1),1);
 inertialDat.aZ = inertialDat.aZ   + sigAccel * randn(size(ORDat,1),1);
-inertialDat.gX = inertialDat.gX   + sigGyro * randn(size(ORDat,1),1)+0.1;
+inertialDat.gX = inertialDat.gX   + sigGyro * randn(size(ORDat,1),1);
 inertialDat.gY = inertialDat.gY   + sigGyro * randn(size(ORDat,1),1);
 inertialDat.gZ = inertialDat.gZ   + sigGyro * randn(size(ORDat,1),1);
 inertialDat.mX = inertialDat.mX   + sigMag * randn(size(ORDat,1),1);
 inertialDat.mY = inertialDat.mY   + sigMag * randn(size(ORDat,1),1);
 inertialDat.mZ = inertialDat.mZ   + sigMag * randn(size(ORDat,1),1);
+inertialDat.lat = inertialDat.lat + sigGPS * randn(size(ORDat,1),1);
+inertialDat.lon = inertialDat.lon + sigGPS * randn(size(ORDat,1),1);
 
-inertialDat.Prs(2:2:end) = nan;
+% inertialDat.Prs(2:2:end) = nan;
 end
