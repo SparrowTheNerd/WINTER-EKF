@@ -16,7 +16,7 @@ sigAccel = (0.005*9.81); % m/s^2 rms
 sigGyro = deg2rad(0.1); % dps rms
 sigMag = 0.0004; % Gauss rms
 sigBaro = 3; % meters rms
-sigGPS = 10; % meters rms
+sigGPS = 5; % meters rms
 
 Rmag = eye(3)*sigMag^2;
 Rbaro = sigBaro^2;
@@ -24,9 +24,9 @@ Rgps = eye(2)*sigGPS^2;
 % sigGPSVel = 0.05; % m/s rms
 
 % pnX is process noise
-pnAccel = 10;
+pnAccel = 0.05;
 pnGyro = deg2rad(1);
-pnBf = 0.01;
+pnBf = 0.05;
 pnBw = 0.01;
 pnBm = 0.0005;
 
@@ -59,35 +59,45 @@ for i = 1:size(ORDat,1)-1
     % a-priori inertial state
     inertialStateN = integrationMEKF(inertialStateList(:,i),[a w],[aBias wBias],tS); 
     
-    if (mod(i,1) == 0)
-        % 2) covariance prediction
-        F = stateTransitionMEKF(inertialStateN(1:4),w,a,inertialStateList(1:4,i),wPos,aPos);
-        wPos = w; aPos = a;
-        Phi = eye(18) + F*tS + 1/2*F^2*tS^2;
-        Pn1n = Phi*Pnn*Phi'+Qd;
-        % cond(Pn1n)
     
+    % 2) covariance prediction
+    F = stateTransitionMEKF(inertialStateN(1:4),w,a,qPos,wPos,aPos);
+    Phi = eye(18) + F*tS + 1/2*F^2*tS^2;
+    Pn1n = Phi*Pnn*Phi'+Qd;
+    % cond(Pn1n)
+
+    if (mod(i,2) == 0)
         % 3 & 4) residual mappings & kalman gain
-        [dm, hm] = magMeasurementMEKF(inertialStateN(1:4),[dat.mX(i) dat.mY(i) dat.mZ(i)],mag0);
+        % P = (I - K*H)*P*(I - K*H)' + K*R*K';
+        I = eye(18);
+        [dm, hm] = magMeasurementMEKF(inertialStateN(1:4)',[dat.mX(i) dat.mY(i) dat.mZ(i)],mag0);
         Km = Pn1n*hm' / (hm*Pn1n*hm' + Rmag);
         dXm = Km*dm';
-        Pm = (eye(18)-Km*hm)*Pn1n;
-    
+        % Pm = (I-Km*hm)*Pn1n;
+        Pm = (I - Km*hm)*Pn1n*(I-Km*hm)' + Km*Rmag*Km';
+
         alt = atmospalt(dat.Prs(i));
         [db, hb] = baroMeasurementMEKF(inertialStateN(7),alt-alt0);
         Kb = Pm*hb' / (hb*Pm*hb' + Rbaro);
         dXb = dXm + Kb*db;
-        Pb = (eye(18)-Kb*hb)*Pm;
+        % Pb = (I-Kb*hb)*Pm;
+        Pb = (I - Kb*hb)*Pm*(I-Kb*hb)' + Kb*Rbaro*Kb';
 
-        [dg, hg] = gpsMeasurementMEKF(inertialStateN(5),inertialStateN(6),dat.lat(i),dat.lon(i),LL0(1),LL0(2));
-        Kg = Pb*hg' / (hg*Pb*hg' + Rgps);
-        dXg = dXb + Kg*dg';
-        Pg = (eye(18)-Kg*hg)*Pb;
 
-        Xnn = dXg;
-        Pnn = Pg;
-        % cond2 = cond(Pnn);
-    
+        if(mod(i,1) == 0)
+            [dg, hg] = gpsMeasurementMEKF(inertialStateN(5),inertialStateN(6),dat.lat(i),dat.lon(i),LL0(1),LL0(2));
+            Kg = Pb*hg' / (hg*Pb*hg' + Rgps);
+            dXg = dXb + Kg*dg';
+            % Pg = (I-Kg*hg)*Pb;
+            Pg = (I - Kg*hg)*Pb*(I-Kg*hg)' + Kg*Rgps*Kg';
+
+            Xnn = dXg;
+            Pnn = Pg;
+        else
+            Xnn = dXb;
+            Pnn = Pb;
+        end
+
         % 5) update full states and calibrations
         inertialState = zeros(10,1);
         inertialState(1:4) = quatmultiply(inertialStateN(1:4)',[1 (Xnn(1:3)/2)'])';
@@ -97,19 +107,21 @@ for i = 1:size(ORDat,1)-1
         wBias = wBias + Xnn(10:12);
         aBias = aBias + Xnn(13:15);
         mBias = mBias + Xnn(16:18);
-    
+
         errStateList(:,i) = Xnn;
         inertialStateList(:,i+1) = inertialState;
-    
+
         % dtheta = Xnn(1:3);
         % G = eye(18);
         % G(1:3,1:3) = eye(3) - skew(dtheta);
         % Pnn = G * Pnn * G.';
         Xnn = 0;
-      
+        wPos = w; aPos = a; qPos = inertialState(1:4);
+
     else
         inertialState = inertialStateN;
         inertialStateList(:,i+1) = inertialState;
+        Pnn = Pn1n;
     end
 
 
@@ -244,7 +256,7 @@ function run_animation(quatList, posList, dat)
     
     for i = 1:5:height(dat)
         q = quatList(:,i);
-        q = [q(1) q(2) -q(3) q(4)];
+        q = [q(1) q(2) q(3) q(4)];
         q = quaternion(q);
         pos = posList(:,i);
         set(patch, Orientation=q, Position=pos); hold on

@@ -19,16 +19,16 @@ ORDat = removevars(ORDat,"Time");
 mXYZ = zeros(size(ORDat,1),3);
 for i=1:size(ORDat,1)
     mXYZ(i,:) = wrldmagm(ORDat.relPosZ(i),ORDat.lat(i),ORDat.lon(i),decyear(2025,12,25),'2025');
-    % rotate magnetometer measurements into body frame
-    mXYZrot = quatrotate([ORDat.qW ORDat.qX ORDat.qY ORDat.qZ],mXYZ)*1e-5;
 end
+% rotate magnetometer measurements into body frame
+mXYZrot = quatrotIB([ORDat.qW ORDat.qX ORDat.qY ORDat.qZ],mXYZ)*1e-5;
 
 inertialDatArr = [ORDat.t P ORDat.bodyAccX ORDat.bodyAccY ORDat.bodyAccZ ORDat.bodyGyrX ORDat.bodyGyrY ORDat.bodyGyrZ mXYZrot(:,1) mXYZrot(:,2) mXYZrot(:,3),ORDat.lat,ORDat.lon];
 inertialDat = array2table(inertialDatArr,"VariableNames",{'Time','Prs','aX','aY','aZ','gX','gY','gZ','mX','mY','mZ','lat','lon'});
 
-accel = quatrotate(quatconj([ORDat.qW ORDat.qX ORDat.qY ORDat.qZ]),[inertialDat.aX inertialDat.aY inertialDat.aZ]);
-accel(:,3) = accel(:,3) - 9.80665;
-accelBody = quatrotate(([ORDat.qW ORDat.qX ORDat.qY ORDat.qZ]),accel);
+accel = quatrotBI([ORDat.qW ORDat.qX ORDat.qY ORDat.qZ],[inertialDat.aX inertialDat.aY inertialDat.aZ]);
+accel(:,3) = accel(:,3) + 9.80665;
+accelBody = quatrotIB([ORDat.qW ORDat.qX ORDat.qY ORDat.qZ],accel);
 inertialDat.aX = accelBody(:,1); inertialDat.aY = accelBody(:,2); inertialDat.aZ = accelBody(:,3);
 
 % add noise and bias to measurements
