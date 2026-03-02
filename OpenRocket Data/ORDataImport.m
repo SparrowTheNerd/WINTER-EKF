@@ -23,8 +23,8 @@ end
 % rotate magnetometer measurements into body frame
 mXYZrot = quatrotIB([ORDat.qW ORDat.qX ORDat.qY ORDat.qZ],mXYZ)*1e-5;
 
-inertialDatArr = [ORDat.t P ORDat.bodyAccX ORDat.bodyAccY ORDat.bodyAccZ ORDat.bodyGyrX ORDat.bodyGyrY ORDat.bodyGyrZ mXYZrot(:,1) mXYZrot(:,2) mXYZrot(:,3),ORDat.lat,ORDat.lon];
-inertialDat = array2table(inertialDatArr,"VariableNames",{'Time','Prs','aX','aY','aZ','gX','gY','gZ','mX','mY','mZ','lat','lon'});
+inertialDatArr = [ORDat.t P ORDat.bodyAccX ORDat.bodyAccY ORDat.bodyAccZ ORDat.worldVelX ORDat.worldVelY ORDat.bodyGyrX ORDat.bodyGyrY ORDat.bodyGyrZ mXYZrot(:,1) mXYZrot(:,2) mXYZrot(:,3),ORDat.lat,ORDat.lon];
+inertialDat = array2table(inertialDatArr,"VariableNames",{'Time','Prs','aX','aY','aZ','vX','vY','gX','gY','gZ','mX','mY','mZ','lat','lon'});
 
 accel = quatrotBI([ORDat.qW ORDat.qX ORDat.qY ORDat.qZ],[inertialDat.aX inertialDat.aY inertialDat.aZ]);
 accel(:,3) = accel(:,3) + 9.80665;
@@ -33,17 +33,19 @@ inertialDat.aX = accelBody(:,1); inertialDat.aY = accelBody(:,2); inertialDat.aZ
 
 % add noise and bias to measurements
 
-sigAccel = (0.005*9.81); % m/s^2 rms
-sigGyro = deg2rad(0.1); % dps rms
-sigMag = 0.0004; % Gauss rms
-sigBaro = 3; % meters rms
+sigAccel = 0.000515; % m/s^2 rms
+sigGyro = deg2rad(0.002086); % dps rms
+sigMag = 0.000053; % Gauss rms
+sigBaro = 0.354508; % meters rms
 sigGPS = 0.00005; % coordinate degrees rms
-% sigGPSVel = 0.05^2; % m/s rms
+sigGPSVel = 0.1^2; % m/s rms
 
 inertialDat.Prs = inertialDat.Prs + sigBaro * randn(size(ORDat,1),1);
 inertialDat.aX = inertialDat.aX   + sigAccel * randn(size(ORDat,1),1);
 inertialDat.aY = inertialDat.aY   + sigAccel * randn(size(ORDat,1),1);
 inertialDat.aZ = inertialDat.aZ   + sigAccel * randn(size(ORDat,1),1);
+inertialDat.vX = inertialDat.vX   + sigGPSVel * randn(size(ORDat,1),1);
+inertialDat.vY = inertialDat.vY   + sigGPSVel * randn(size(ORDat,1),1);
 inertialDat.gX = inertialDat.gX   + sigGyro * randn(size(ORDat,1),1);
 inertialDat.gY = inertialDat.gY   + sigGyro * randn(size(ORDat,1),1);
 inertialDat.gZ = inertialDat.gZ   + sigGyro * randn(size(ORDat,1),1);

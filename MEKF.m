@@ -8,27 +8,24 @@ SetupEnv();
 % inertial states are quaternion, position, velocity
 % quaternion here represents a body to inertial rotation
 
-tS = 0.01; %sample time (100hz)
+tS = 0.005; %sample time (100hz)
 [ORDat,dat] = ORDataImport(tS);
 
 % sigX^2 is noise covariance
-sigAccel = (0.005*9.81); % m/s^2 rms
-sigGyro = deg2rad(0.1); % dps rms
 sigMag = 0.0004; % Gauss rms
-sigBaro = 3; % meters rms
+sigBaro = 0.354508; % meters rms
 sigGPS = 5; % meters rms
+sigAccel = 0.0015; % m/s^2
+sigGyro = deg2rad(0.002086); % rads/s
+sigBf = 0.0078;
+sigBw = 0.00022;
+sigBm = 0.00009;
+sigGPSVel = 0.1; % m/s rms
 
 Rmag = eye(3)*sigMag^2;
 Rbaro = sigBaro^2;
 Rgps = eye(2)*sigGPS^2;
-% sigGPSVel = 0.05; % m/s rms
-
-% pnX is process noise
-pnAccel = 0.05;
-pnGyro = deg2rad(1);
-pnBf = 0.05;
-pnBw = 0.01;
-pnBm = 0.0005;
+RgpsVel = eye(2)*sigGPSVel^2;
 
 G = 9.80665;
 
@@ -47,9 +44,10 @@ inertialStateList = zeros(10,size(ORDat,1));
 inertialStateList(:,1) = inertialState;
 
 errStateList = zeros(18,size(ORDat,1));
+covariance = zeros(18,18,size(ORDat,1));
 
 Pnn = zeros(18,18);
-Qd = noiseCovarianceMEKF(tS,pnGyro,pnAccel,pnBw,pnBf,pnBm); % time-invariant noise covariance matrix
+Qd = noiseCovarianceMEKF(tS,sigGyro,sigAccel,sigBw,sigBf,sigBm); % time-invariant noise covariance matrix
 
 for i = 1:size(ORDat,1)-1
 
@@ -66,7 +64,7 @@ for i = 1:size(ORDat,1)-1
     Pn1n = Phi*Pnn*Phi'+Qd;
     % cond(Pn1n)
 
-    if (mod(i,2) == 0)
+    if (mod(i,5) == 0)
         % 3 & 4) residual mappings & kalman gain
         % P = (I - K*H)*P*(I - K*H)' + K*R*K';
         I = eye(18);
@@ -84,15 +82,21 @@ for i = 1:size(ORDat,1)-1
         Pb = (I - Kb*hb)*Pm*(I-Kb*hb)' + Kb*Rbaro*Kb';
 
 
-        if(mod(i,1) == 0)
+        if(mod(i,10) == 0)
             [dg, hg] = gpsMeasurementMEKF(inertialStateN(5),inertialStateN(6),dat.lat(i),dat.lon(i),LL0(1),LL0(2));
             Kg = Pb*hg' / (hg*Pb*hg' + Rgps);
             dXg = dXb + Kg*dg';
             % Pg = (I-Kg*hg)*Pb;
             Pg = (I - Kg*hg)*Pb*(I-Kg*hg)' + Kg*Rgps*Kg';
 
-            Xnn = dXg;
-            Pnn = Pg;
+            [dv, hv] = gpsVelMeasurementMEKF([inertialStateN(8:9)],[dat.vX(i);dat.vY(i)]);
+            Kv = Pg*hv' / (hv*Pg*hv' + RgpsVel);
+            dXv = dXg + Kv*dv;
+            % Pg = (I-Kg*hg)*Pb;
+            Pv = (I - Kv*hv)*Pg*(I-Kv*hv)' + Kv*RgpsVel*Kv';
+
+            Xnn = dXv;
+            Pnn = Pv;
         else
             Xnn = dXb;
             Pnn = Pb;
@@ -124,6 +128,7 @@ for i = 1:size(ORDat,1)-1
         Pnn = Pn1n;
     end
 
+    covariance(:,:,i+1) = Pnn;
 
 end
 wBias
@@ -238,6 +243,25 @@ linkaxes([qwp qxp qyp qzp],'y')
 qwp.YLim = [-1 1];
 
 %%
+numState = 2;
+quatErr = quatmultiply(quatconj(inertialStateList(1:4,:)'),[ORDat.qW,ORDat.qX,ORDat.qY,ORDat.qZ]);
+% truthDat = ORDat.worldVelX;
+plot(dat.Time,sqrt(squeeze(covariance(numState,numState,:))),"Color",'b');
+hold on;
+plot(dat.Time,-sqrt(squeeze(covariance(numState,numState,:))),"Color",'b');
+hold on;
+plot(dat.Time,quatErr(:,numState));
+
+grid on;
+%%
+figure(5)
+plot(inertialStateList(5,:),inertialStateList(6,:));
+hold on;
+plot(ORDat.relPosX,ORDat.relPosY,LineStyle="--");
+hold on;
+plot(sqrt(squeeze(covariance(5,5,:)))*[1 -1]+inertialStateList(5,:)',sqrt(squeeze(covariance(6,6,:)))*[1 -1]+inertialStateList(6,:)',Color='r')
+grid on;
+%%
 run_animation(quatList, posList, dat) ;
 
 function run_animation(quatList, posList, dat)   
@@ -254,7 +278,7 @@ function run_animation(quatList, posList, dat)
     ylabel("Y")
     zlabel("Z")
     
-    for i = 1:5:height(dat)
+    for i = 1:10:height(dat)
         q = quatList(:,i);
         q = [q(1) q(2) q(3) q(4)];
         q = quaternion(q);

@@ -10,20 +10,35 @@ axb = bias(1); ayb = bias(2); azb = bias(3);
 wxb = bias(4); wyb = bias(5); wzb = bias(6);
 
 ax = u(1)-axb; ay = u(2)-ayb; az = u(3)-azb;
-wx = u(4)-wxb; wy = u(5)-wyb; wz = u(6)-wzb;
+wx = u(4) - wxb; wy = u(5) - wyb; wz = u(6) - wzb;
+w = [wx; wy; wz];
 
 % Quaternion Integration:
 % https://ahrs.readthedocs.io/en/latest/filters/ekf.html#prediction-step 
-qw1 = qw - (dT/2)*wx*qx - (dT/2)*wy*qy - (dT/2)*wz*qz;
-qx1 = qx + (dT/2)*wx*qw - (dT/2)*wy*qz + (dT/2)*wz*qy;
-qy1 = qy + (dT/2)*wx*qz + (dT/2)*wy*qw - (dT/2)*wz*qx;
-qz1 = qz - (dT/2)*wx*qy + (dT/2)*wy*qx + (dT/2)*wz*qw;
+% qw1 = qw - (dT/2)*wx*qx - (dT/2)*wy*qy - (dT/2)*wz*qz;
+% qx1 = qx + (dT/2)*wx*qw - (dT/2)*wy*qz + (dT/2)*wz*qy;
+% qy1 = qy + (dT/2)*wx*qz + (dT/2)*wy*qw - (dT/2)*wz*qx;
+% qz1 = qz - (dT/2)*wx*qy + (dT/2)*wy*qx + (dT/2)*wz*qw;
 
-qNorm = norm([qw1 qx1 qy1 qz1]);
-qw1 = qw1/qNorm;
-qx1 = qx1/qNorm;
-qy1 = qy1/qNorm;
-qz1 = qz1/qNorm;
+% sig = [wx; wy; wz]*dT;
+% sigN = norm(sig);
+% expOmega = [cos(sigN/2) (sin(sigN/2)/2)*sig';
+%            (sin(sigN/2)/2)*sig (cos(sigN/2)*eye(3))-((sin(sigN/2)/2)*skew(sig))];
+% q1 = expOmega * [qw; qx; qy; qz];
+
+omega = [0 -w';
+         w -skew(w)];
+
+% q1 = expm(omega*0.5*dT)*[qw; qx; qy; qz];
+wN = norm(w);
+q1 = (cos(wN*dT/2)*eye(4) + (1/wN)*sin(wN*dT/2)*omega) * [qw; qx; qy; qz];
+
+
+qNorm = norm(q1);
+qw1 = q1(1)/qNorm;
+qx1 = q1(2)/qNorm;
+qy1 = q1(3)/qNorm;
+qz1 = q1(4)/qNorm;
 
 % Rotate accelerations into the inertial frame
 ag = quatrotBI([qw1 qx1 qy1 qz1],[ax ay az]);
