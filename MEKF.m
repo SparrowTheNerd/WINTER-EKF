@@ -8,19 +8,23 @@ SetupEnv();
 % inertial states are quaternion, position, velocity
 % quaternion here represents a body to inertial rotation
 
-tS = 0.005; %sample time (100hz)
+fS = 200; % sample frequency (Hz)
+fC = 50; % correction frequency (Hz)
+fG = 10; % GPS frequency (Hz)
+tS = 1/fS; %sample time
+
 [ORDat,dat] = ORDataImport(tS);
 
 % sigX^2 is noise covariance
-sigMag = 0.0004; % Gauss rms
-sigBaro = 0.354508; % meters rms
-sigGPS = 5; % meters rms
-sigAccel = 0.0015; % m/s^2
-sigGyro = deg2rad(0.002086); % rads/s
-sigBf = 0.0078;
+sigMag = 0.0004; % Gauss/sqrt(hz)
+sigBaro = 0.354508; % meters / sqrt(hz)
+sigGPS = 5; % meters / sqrt(hz)
+sigGPSVel = 0.1; % m/s rms
+sigAccel = 0.00015; % m/s^2 / sqrt(hz)
+sigGyro = deg2rad(0.002086); % rads/s / sqrt(hz)
+sigBa = 0.0078; 
 sigBw = 0.00022;
 sigBm = 0.00009;
-sigGPSVel = 0.1; % m/s rms
 
 Rmag = eye(3)*sigMag^2;
 Rbaro = sigBaro^2;
@@ -47,7 +51,7 @@ errStateList = zeros(18,size(ORDat,1));
 covariance = zeros(18,18,size(ORDat,1));
 
 Pnn = zeros(18,18);
-Qd = noiseCovarianceMEKF(tS,sigGyro,sigAccel,sigBw,sigBf,sigBm); % time-invariant noise covariance matrix
+Qd = noiseCovarianceMEKF(tS,sigGyro,sigAccel,sigBw,sigBa,sigBm); % time-invariant noise covariance matrix
 
 for i = 1:size(ORDat,1)-1
 
@@ -64,43 +68,41 @@ for i = 1:size(ORDat,1)-1
     Pn1n = Phi*Pnn*Phi'+Qd;
     % cond(Pn1n)
 
-    if (mod(i,5) == 0)
+    if (mod(i,1/fC) == 0)
         % 3 & 4) residual mappings & kalman gain
         % P = (I - K*H)*P*(I - K*H)' + K*R*K';
         I = eye(18);
         [dm, hm] = magMeasurementMEKF(inertialStateN(1:4)',[dat.mX(i) dat.mY(i) dat.mZ(i)],mag0);
         Km = Pn1n*hm' / (hm*Pn1n*hm' + Rmag);
-        dXm = Km*dm';
-        % Pm = (I-Km*hm)*Pn1n;
+        dX = Km*dm';
+        P = (I-Km*hm)*Pn1n;
         Pm = (I - Km*hm)*Pn1n*(I-Km*hm)' + Km*Rmag*Km';
 
         alt = atmospalt(dat.Prs(i));
         [db, hb] = baroMeasurementMEKF(inertialStateN(7),alt-alt0);
-        Kb = Pm*hb' / (hb*Pm*hb' + Rbaro);
-        dXb = dXm + Kb*db;
-        % Pb = (I-Kb*hb)*Pm;
-        Pb = (I - Kb*hb)*Pm*(I-Kb*hb)' + Kb*Rbaro*Kb';
+        Kb = P*hb' / (hb*P*hb' + Rbaro);
+        dX = dX + Kb*db;
+        P = (I-Kb*hb)*P;
+        % Pb = (I - Kb*hb)*Pm*(I-Kb*hb)' + Kb*Rbaro*Kb';
 
-
-        if(mod(i,10) == 0)
+        if(mod(i,1/fG) == 0)
             [dg, hg] = gpsMeasurementMEKF(inertialStateN(5),inertialStateN(6),dat.lat(i),dat.lon(i),LL0(1),LL0(2));
-            Kg = Pb*hg' / (hg*Pb*hg' + Rgps);
-            dXg = dXb + Kg*dg';
-            % Pg = (I-Kg*hg)*Pb;
-            Pg = (I - Kg*hg)*Pb*(I-Kg*hg)' + Kg*Rgps*Kg';
+            K = P*hg' / (hg*P*hg' + Rgps);
+            dX = dX + K*dg';
+            P = (I-K*hg)*P;
+            % Pg = (I - Kg*hg)*Pb*(I-Kg*hg)' + Kg*Rgps*Kg';
 
             [dv, hv] = gpsVelMeasurementMEKF([inertialStateN(8:9)],[dat.vX(i);dat.vY(i)]);
-            Kv = Pg*hv' / (hv*Pg*hv' + RgpsVel);
-            dXv = dXg + Kv*dv;
-            % Pg = (I-Kg*hg)*Pb;
-            Pv = (I - Kv*hv)*Pg*(I-Kv*hv)' + Kv*RgpsVel*Kv';
+            Kv = P*hv' / (hv*P*hv' + RgpsVel);
+            dX = dX + Kv*dv;
+            P = (I-Kv*hv)*P;
+            % Pv = (I - Kv*hv)*Pg*(I-Kv*hv)' + Kv*RgpsVel*Kv';
 
-            Xnn = dXv;
-            Pnn = Pv;
-        else
-            Xnn = dXb;
-            Pnn = Pb;
         end
+
+        Xnn = dX;
+        Pnn = P;
+
 
         % 5) update full states and calibrations
         inertialState = zeros(10,1);
@@ -243,7 +245,7 @@ linkaxes([qwp qxp qyp qzp],'y')
 qwp.YLim = [-1 1];
 
 %%
-numState = 2;
+numState = 3;
 quatErr = quatmultiply(quatconj(inertialStateList(1:4,:)'),[ORDat.qW,ORDat.qX,ORDat.qY,ORDat.qZ]);
 % truthDat = ORDat.worldVelX;
 plot(dat.Time,sqrt(squeeze(covariance(numState,numState,:))),"Color",'b');
@@ -251,7 +253,7 @@ hold on;
 plot(dat.Time,-sqrt(squeeze(covariance(numState,numState,:))),"Color",'b');
 hold on;
 plot(dat.Time,quatErr(:,numState));
-
+% plot(dat.Time,inertialStateList(numState,:)-truthDat')
 grid on;
 %%
 figure(5)
