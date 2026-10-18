@@ -8,21 +8,21 @@ SetupEnv();
 % inertial states are quaternion, position, velocity
 % quaternion here represents a body to inertial rotation
 
-fS = 200; % sample frequency (Hz)
-fC = 50; % correction frequency (Hz)
-fG = 10; % GPS frequency (Hz)
+fS = 54; % sample frequency (Hz)
+fC = 18; % correction frequency (Hz)
+fG = 18; % GPS frequency (Hz)
 tS = 1/fS; %sample time
 
-[ORDat,dat] = ORDataImport(tS);
+[ORDat,dat] = SDDataImport(tS);
 
 % sigX^2 is noise covariance
-sigMag = 0.0004; % Gauss/sqrt(hz)
+sigMag = 0.000053; % Gauss/sqrt(hz)
 sigBaro = 0.354508; % meters / sqrt(hz)
-sigGPS = 5; % meters / sqrt(hz)
-sigGPSVel = 0.1; % m/s rms
-sigAccel = 0.00015; % m/s^2 / sqrt(hz)
+sigGPS = 3; % meters / sqrt(hz)
+sigGPSVel = 0.3; % m/s rms
+sigAccel = 0.000515; % m/s^2 / sqrt(hz)
 sigGyro = deg2rad(0.002086); % rads/s / sqrt(hz)
-sigBa = 0.0078; 
+sigBa = 0.000078; 
 sigBw = 0.00022;
 sigBm = 0.00009;
 
@@ -34,7 +34,8 @@ RgpsVel = eye(2)*sigGPSVel^2;
 G = 9.80665;
 
 alt0 = atmospalt(dat.Prs(1)); %initial pressure altitude
-qPos = [ORDat.qW(1) ORDat.qX(1) ORDat.qY(1) ORDat.qZ(1)]; % a-posteriori
+% qPos = [ORDat.qW(1) ORDat.qX(1) ORDat.qY(1) ORDat.qZ(1)]; % a-posteriori
+qPos = [-0.726783216 0.114722662 0.667599261 -0.113737084];
 wPos = [0 0 0]; aPos = [dat.aX dat.aY dat.aZ]; % previous IMU measurements
 wBias = [0; 0; 0]; aBias = [0; 0; 0]; mBias = [0; 0; 0]; % IMU bias vectors
 
@@ -51,7 +52,17 @@ errStateList = zeros(18,size(ORDat,1));
 covariance = zeros(18,18,size(ORDat,1));
 
 Pnn = zeros(18,18);
+% Pdiag = [0.00001 0.00001 0.00001 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 ];
+% Pnn = diag(Pdiag);
+
 Qd = noiseCovarianceMEKF(tS,sigGyro,sigAccel,sigBw,sigBa,sigBm); % time-invariant noise covariance matrix
+
+% figure(1)
+% plotP = pcolor(Pnn);
+% axis image
+% axis ij
+% colorbar
+% titleP = title(sprintf("t = %0.2f", dat.Time(1)));
 
 for i = 1:size(ORDat,1)-1
 
@@ -67,25 +78,27 @@ for i = 1:size(ORDat,1)-1
     Phi = eye(18) + F*tS + 1/2*F^2*tS^2;
     Pn1n = Phi*Pnn*Phi'+Qd;
     % cond(Pn1n)
-
-    if (mod(i,1/fC) == 0)
+    P=Pn1n;
+    dX = zeros(18,1);
+    if (mod(i,fS/fC) == 0)
         % 3 & 4) residual mappings & kalman gain
         % P = (I - K*H)*P*(I - K*H)' + K*R*K';
         I = eye(18);
-        [dm, hm] = magMeasurementMEKF(inertialStateN(1:4)',[dat.mX(i) dat.mY(i) dat.mZ(i)],mag0);
-        Km = Pn1n*hm' / (hm*Pn1n*hm' + Rmag);
-        dX = Km*dm';
-        P = (I-Km*hm)*Pn1n;
-        Pm = (I - Km*hm)*Pn1n*(I-Km*hm)' + Km*Rmag*Km';
+        
+        % [dm, hm] = magMeasurementMEKF(inertialStateN(1:4)',[dat.mX(i) dat.mY(i) dat.mZ(i)],mag0);
+        % Km = Pn1n*hm' / (hm*Pn1n*hm' + Rmag);
+        % dX = Km*dm';
+        % P = (I-Km*hm)*Pn1n;
+        % Pm = (I - Km*hm)*Pn1n*(I-Km*hm)' + Km*Rmag*Km';
 
         alt = atmospalt(dat.Prs(i));
-        [db, hb] = baroMeasurementMEKF(inertialStateN(7),alt-alt0);
+        [db, hb] = baroMeasurementMEKF(inertialStateN(7),alt);
         Kb = P*hb' / (hb*P*hb' + Rbaro);
         dX = dX + Kb*db;
         P = (I-Kb*hb)*P;
         % Pb = (I - Kb*hb)*Pm*(I-Kb*hb)' + Kb*Rbaro*Kb';
 
-        if(mod(i,1/fG) == 0)
+        if(mod(i,fS/fG) == 0)
             [dg, hg] = gpsMeasurementMEKF(inertialStateN(5),inertialStateN(6),dat.lat(i),dat.lon(i),LL0(1),LL0(2));
             K = P*hg' / (hg*P*hg' + Rgps);
             dX = dX + K*dg';
@@ -132,12 +145,25 @@ for i = 1:size(ORDat,1)-1
 
     covariance(:,:,i+1) = Pnn;
 
+    % if (mod(i,fS/200)==0)
+    %     plotP.CData = Pnn;
+    %     titleP.String = sprintf("t = %0.2f", dat.Time(i));
+    %     set(gca,'ColorScale','log')
+    %     drawnow
+    % end
+
 end
 wBias
 aBias
 mBias
 quatList = inertialStateList(1:4,:);
 posList = inertialStateList(5:7,:);
+eulAngs = zeros(height(dat),3);
+eulAngsTrue = zeros(height(dat),3);
+for i = 1:height(dat)
+    eulAngs(i,:) = quat2eul(quatList(:,i)',"ZYX")*180/pi;
+    eulAngsTrue(i,:) = quat2eul([ORDat.qW(i) ORDat.qX(i) ORDat.qY(i) ORDat.qZ(i)],"ZYX")*180/pi;
+end
 %% Figure Plotting
 figure(1);
 subplot(3,1,1);
@@ -167,13 +193,6 @@ hold on;
 plot(ORDat.t,ORDat.relPosZ);
 legend("Simulated","Truth")
 grid on;
-
-eulAngs = zeros(height(dat),3);
-eulAngsTrue = zeros(height(dat),3);
-for i = 1:height(dat)
-    eulAngs(i,:) = quat2eul(quatList(:,i)',"ZYX")*180/pi;
-    eulAngsTrue(i,:) = quat2eul([ORDat.qW(i) ORDat.qX(i) ORDat.qY(i) ORDat.qZ(i)],"ZYX")*180/pi;
-end
 
 figure(2);
 axP = subplot(3,1,1);
@@ -245,24 +264,35 @@ linkaxes([qwp qxp qyp qzp],'y')
 qwp.YLim = [-1 1];
 
 %%
-numState = 3;
-quatErr = quatmultiply(quatconj(inertialStateList(1:4,:)'),[ORDat.qW,ORDat.qX,ORDat.qY,ORDat.qZ]);
-% truthDat = ORDat.worldVelX;
-plot(dat.Time,sqrt(squeeze(covariance(numState,numState,:))),"Color",'b');
+intState = 6;
+covState = 8;
+% quatErr = quatmultiply(quatconj(inertialStateList(1:4,:)'),[ORDat.qW,ORDat.qX,ORDat.qY,ORDat.qZ]);
+truthDat = ORDat.relPosY;
+plot(dat.Time,sqrt(squeeze(covariance(covState,covState,:)))*3,"Color",'b');
 hold on;
-plot(dat.Time,-sqrt(squeeze(covariance(numState,numState,:))),"Color",'b');
+plot(dat.Time,-sqrt(squeeze(covariance(covState,covState,:)))*3,"Color",'b');
 hold on;
-plot(dat.Time,quatErr(:,numState));
-% plot(dat.Time,inertialStateList(numState,:)-truthDat')
+% plot(dat.Time,quatErr(:,2));
+plot(dat.Time,inertialStateList(intState,:)-truthDat')
 grid on;
+%%
+quatErr = quatmultiply(quatconj(inertialStateList(1:4,:)'),[ORDat.qW,ORDat.qX,ORDat.qY,ORDat.qZ]);
+eulErr = quat2eul(quatErr,"ZYX");
+stateP = 1;
+plot(dat.Time,sqrt(squeeze(covariance(stateP,stateP,:)))*3,"Color",'b');
+hold on;
+plot(dat.Time,-sqrt(squeeze(covariance(stateP,stateP,:)))*3,"Color",'b');
+hold on;
+plot(dat.Time,eulErr(:,stateP)-errStateList(stateP,:)');
 %%
 figure(5)
 plot(inertialStateList(5,:),inertialStateList(6,:));
 hold on;
 plot(ORDat.relPosX,ORDat.relPosY,LineStyle="--");
 hold on;
-plot(sqrt(squeeze(covariance(5,5,:)))*[1 -1]+inertialStateList(5,:)',sqrt(squeeze(covariance(6,6,:)))*[1 -1]+inertialStateList(6,:)',Color='r')
+% plot(sqrt(squeeze(covariance(5,5,:)))*[1 -1]+inertialStateList(5,:)',sqrt(squeeze(covariance(6,6,:)))*[1 -1]+inertialStateList(6,:)',Color='r')
 grid on;
+axis equal;
 %%
 run_animation(quatList, posList, dat) ;
 

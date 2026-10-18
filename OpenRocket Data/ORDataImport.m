@@ -38,7 +38,7 @@ sigGyro = deg2rad(0.002086); % dps rms
 sigMag = 0.000053; % Gauss rms
 sigBaro = 0.354508; % meters rms
 sigGPS = 0.00005; % coordinate degrees rms
-sigGPSVel = 0.1^2; % m/s rms
+sigGPSVel = 0.2; % m/s rms
 
 inertialDat.Prs = inertialDat.Prs + sigBaro * randn(size(ORDat,1),1);
 inertialDat.aX = inertialDat.aX   + sigAccel * randn(size(ORDat,1),1);
