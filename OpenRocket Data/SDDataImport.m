@@ -19,7 +19,7 @@ arguments
 end
 
 raw = readtable(csvFile, "VariableNamingRule", "preserve");
-required = ["time", "accel_x", "accel_y", "accel_z", ...
+required = ["time", "accel_x", "accel_y", "accel_z", "highG_x", "highG_y", "highG_z", ...
     "gyro_x", "gyro_y", "gyro_z", "mag_x", "mag_y", "mag_z", ...
     "lat", "lon", "gpsAlt", "gpsNVel", "gpsEVel", "baroAlt"];
 missing = required(~ismember(required, string(raw.Properties.VariableNames)));
@@ -28,7 +28,7 @@ if ~isempty(missing)
         "CSV is not an sdread.py export. Missing: %s", strjoin(missing, ", "));
 end
 
-signalNames = ["accel_x", "accel_y", "accel_z", "gyro_x", "gyro_y", "gyro_z", ...
+signalNames = ["accel_x", "accel_y", "accel_z", "highG_x", "highG_y", "highG_z", "gyro_x", "gyro_y", "gyro_z", ...
     "mag_x", "mag_y", "mag_z", "baroAlt", "lat", "lon", "gpsAlt", "gpsNVel", "gpsEVel"];
 signals = raw(:, cellstr(signalNames));
 TT = table2timetable(signals, "RowTimes", seconds(raw.time));
@@ -43,6 +43,7 @@ lon = TT.lon(:);
 gpsAlt = TT.gpsAlt(:);
 accelX = -TT.accel_z(:); accelY = TT.accel_y(:); accelZ = TT.accel_x(:);
 gyroX = -TT.gyro_z(:); gyroY = TT.gyro_y(:); gyroZ = TT.gyro_x(:);
+highGX = -TT.highG_z(:); highGY = -TT.highG_y(:); highGZ = -TT.highG_x(:); 
 magX = TT.mag_x(:); magY = TT.mag_y(:); magZ = TT.mag_z(:);
 baroAlt = TT.baroAlt(:);
 
@@ -62,9 +63,9 @@ ORDat = array2table(ORDatArr, "VariableNames", {'t', 'qW', 'qX', 'qY', 'qZ', 're
 % preserve the Prs interface of the original OpenRocket importer.
 [~, ~, pressure] = atmosisa(baroAlt);
 pressure = pressure(:);
-inertialDatArr = [time, pressure, accelX, accelY, accelZ, gpsVelEast, gpsVelNorth, deg2rad(gyroX), deg2rad(gyroY), deg2rad(gyroZ), magX, magY, magZ, lat, lon];
+inertialDatArr = [time, pressure, accelX, accelY, accelZ, highGX, highGY, highGZ, gpsVelEast, gpsVelNorth, deg2rad(gyroX), deg2rad(gyroY), deg2rad(gyroZ), magX, magY, magZ, lat, lon];
 inertialDatArr = inertialDatArr(7732:end,:);
-inertialDat = array2table(inertialDatArr, "VariableNames", {'Time', 'Prs', 'aX', 'aY', 'aZ', 'vX', 'vY', ...
+inertialDat = array2table(inertialDatArr, "VariableNames", {'Time', 'Prs', 'aX', 'aY', 'aZ', 'hGX', 'hGY', 'hGZ', 'vX', 'vY', ...
     'gX', 'gY', 'gZ', 'mX', 'mY', 'mZ', 'lat', 'lon'});
 
 end

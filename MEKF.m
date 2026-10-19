@@ -14,15 +14,18 @@ fG = 18; % GPS frequency (Hz)
 tS = 1/fS; %sample time
 
 [ORDat,dat] = SDDataImport(tS);
+% [ORDat,dat] = ORDataImport(tS);
 
 % sigX^2 is noise covariance
 sigMag = 0.000053; % Gauss/sqrt(hz)
 sigBaro = 0.354508; % meters / sqrt(hz)
-sigGPS = 3; % meters / sqrt(hz)
-sigGPSVel = 0.3; % m/s rms
+sigGPS = 5; % meters / sqrt(hz)
+sigGPSVel = 0.05; % m/s rms
 sigAccel = 0.000515; % m/s^2 / sqrt(hz)
+sigHighG = 0.049; % m/s^2 / sqrt(hz)
 sigGyro = deg2rad(0.002086); % rads/s / sqrt(hz)
-sigBa = 0.000078; 
+sigBla = 0.000078; % low accel
+sigBha = 0.001; % high accel
 sigBw = 0.00022;
 sigBm = 0.00009;
 
@@ -32,6 +35,9 @@ Rgps = eye(2)*sigGPS^2;
 RgpsVel = eye(2)*sigGPSVel^2;
 
 G = 9.80665;
+
+accelTransition = 15*9.80665; % transition point from low to high range accel (m/s^2)
+
 
 alt0 = atmospalt(dat.Prs(1)); %initial pressure altitude
 % qPos = [ORDat.qW(1) ORDat.qX(1) ORDat.qY(1) ORDat.qZ(1)]; % a-posteriori
@@ -55,7 +61,6 @@ Pnn = zeros(18,18);
 % Pdiag = [0.00001 0.00001 0.00001 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 0.01 ];
 % Pnn = diag(Pdiag);
 
-Qd = noiseCovarianceMEKF(tS,sigGyro,sigAccel,sigBw,sigBa,sigBm); % time-invariant noise covariance matrix
 
 % figure(1)
 % plotP = pcolor(Pnn);
@@ -69,13 +74,24 @@ for i = 1:size(ORDat,1)-1
     % 1) measurement / storage
     w = [dat.gX(i) dat.gY(i) dat.gZ(i)];
     a = [dat.aX(i) dat.aY(i) dat.aZ(i)];
+    hg = [dat.hGX(i) dat.hGY(i) dat.hGZ(i)];
+
+    sigBa = sigBla;
+    sigA = sigAccel;
+    if (norm(a) >= accelTransition)
+        a = hg;
+        sigBa = sigBha;
+        sigA = sigHighG;
+        dat.Time(i)
+    end
+
     % a-priori inertial state
     inertialStateN = integrationMEKF(inertialStateList(:,i),[a w],[aBias wBias],tS); 
-    
     
     % 2) covariance prediction
     F = stateTransitionMEKF(inertialStateN(1:4),w,a,qPos,wPos,aPos);
     Phi = eye(18) + F*tS + 1/2*F^2*tS^2;
+    Qd = noiseCovarianceMEKF(tS,sigGyro,sigA,sigBw,sigBa,sigBm); % time-invariant noise covariance matrix
     Pn1n = Phi*Pnn*Phi'+Qd;
     % cond(Pn1n)
     P=Pn1n;
@@ -264,10 +280,10 @@ linkaxes([qwp qxp qyp qzp],'y')
 qwp.YLim = [-1 1];
 
 %%
-intState = 6;
-covState = 8;
+intState = 7;
+covState = 9;
 % quatErr = quatmultiply(quatconj(inertialStateList(1:4,:)'),[ORDat.qW,ORDat.qX,ORDat.qY,ORDat.qZ]);
-truthDat = ORDat.relPosY;
+truthDat = ORDat.relPosZ;
 plot(dat.Time,sqrt(squeeze(covariance(covState,covState,:)))*3,"Color",'b');
 hold on;
 plot(dat.Time,-sqrt(squeeze(covariance(covState,covState,:)))*3,"Color",'b');
@@ -303,24 +319,24 @@ function run_animation(quatList, posList, dat)
 % open(v);
 
     q = quaternion(quatList(:,1)');
-    patch = poseplot(q);
+    patch = poseplot(q, 'ENU');
     
     patch.ScaleFactor = 150;
     xlabel("X")
     ylabel("Y")
     zlabel("Z")
     
-    for i = 1:10:height(dat)
+    for i = 1:50:height(dat)
         q = quatList(:,i);
         q = [q(1) q(2) q(3) q(4)];
         q = quaternion(q);
         pos = posList(:,i);
         set(patch, Orientation=q, Position=pos); hold on
-        plot3(pos(1), pos(2), pos(3), '.b', 'MarkerSize', 2); hold on
+        plot3(pos(1), pos(2), pos(3), '.b', 'MarkerSize', 5); hold on
     
-        xlim([-100, 600]);
-        ylim([-100, 600]);
-        zlim([0, 4500]);
+        xlim([-200, 2000]);
+        ylim([-600, 1000]);
+        zlim([-500, 5]);
     
         set(gca,'ZDir','normal')  
         title(sprintf("t = %0.2f", dat.Time(i)))
